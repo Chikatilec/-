@@ -1,15 +1,13 @@
-import os
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils import executor
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID"))
+BOT_TOKEN = "8157906074:AAGuP4FGIypt9RIII4W_s35luxDL0_-dONQ"
+ADMIN_ID = 6794301033  # Твой Telegram ID
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
 
-# Меню и данные (упрощённо)
 user_data = {}
 
 main_menu = ReplyKeyboardMarkup(resize_keyboard=True).add("Маршрут 1", "Маршрут 2", "Маршрут 3")
@@ -56,8 +54,6 @@ def test_keyboard(options):
     for opt in options:
         kb.add(InlineKeyboardButton(opt, callback_data=f"test_answer:{opt}"))
     return kb
-
-# Хендлеры
 
 @dp.message_handler(commands=["start"])
 async def start_handler(message: types.Message):
@@ -189,5 +185,5 @@ async def fallback_handler(message: types.Message):
     await message.answer("Пожалуйста, выберите опцию из меню.", reply_markup=main_menu)
 
 if __name__ == "__main__":
-    print("Запуск бота...")
+    print("Бот запущен...")
     executor.start_polling(dp, skip_updates=True)
