@@ -1,18 +1,10 @@
-from aiogram import Bot, Dispatcher, types
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.utils import executor
+from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext, CallbackQueryHandler
 
 BOT_TOKEN = "8157906074:AAGuP4FGIypt9RIII4W_s35luxDL0_-dONQ"
-ADMIN_ID = 6794301033  # Твой Telegram ID
+ADMIN_ID = 6794301033
 
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher(bot)
-
-user_data = {}
-
-main_menu = ReplyKeyboardMarkup(resize_keyboard=True).add("Маршрут 1", "Маршрут 2", "Маршрут 3")
-back_button = KeyboardButton("Назад")
-
+# Данные
 routes = {
     "Маршрут 1": [
         "Добро пожаловать на маршрут 1 по Дагестану! Здесь вы увидите горы и водопады.",
@@ -49,141 +41,133 @@ photo_tasks = [
     "Отправьте фотографию местного памятника или культурного объекта."
 ]
 
-def test_keyboard(options):
-    kb = InlineKeyboardMarkup()
-    for opt in options:
-        kb.add(InlineKeyboardButton(opt, callback_data=f"test_answer:{opt}"))
-    return kb
+user_data = {}
 
-@dp.message_handler(commands=["start"])
-async def start_handler(message: types.Message):
-    user_data[message.from_user.id] = {
-        "state": "main",
-        "route": None,
-        "route_step": 0,
-        "points": 0,
-        "test_step": 0,
-        "test_correct": 0,
-        "photo_task": 0
-    }
-    await message.answer("Добро пожаловать в путеводитель по Дагестану! Выберите маршрут:", reply_markup=main_menu)
+def start(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    user_data[user_id] = {"state": "main", "route": None, "step": 0, "points": 0, "test_step": 0, "test_correct": 0, "photo_task": 0}
+    keyboard = [["Маршрут 1", "Маршрут 2", "Маршрут 3"]]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    update.message.reply_text("Добро пожаловать в путеводитель по Дагестану! Выберите маршрут:", reply_markup=reply_markup)
 
-@dp.message_handler(lambda m: m.text in routes.keys())
-async def start_route(message: types.Message):
-    user = user_data.get(message.from_user.id)
-    user["state"] = "route"
-    user["route"] = message.text
-    user["route_step"] = 0
-    await message.answer(routes[user["route"]][0], reply_markup=ReplyKeyboardMarkup(resize_keyboard=True).add(back_button, KeyboardButton("Далее")))
-
-@dp.message_handler(lambda m: m.text == "Назад")
-async def go_back(message: types.Message):
-    user = user_data.get(message.from_user.id)
-    if not user:
-        await start_handler(message)
-        return
-
-    if user["state"] == "route":
-        user["state"] = "main"
-        user["route"] = None
-        user["route_step"] = 0
-        await message.answer("Вы вернулись в главное меню. Выберите маршрут:", reply_markup=main_menu)
-    elif user["state"] == "test" or user["state"] == "photo_tasks":
-        user["state"] = "main"
-        await message.answer("Вы вышли в главное меню. Выберите маршрут:", reply_markup=main_menu)
-    else:
-        await message.answer("Вы в главном меню.", reply_markup=main_menu)
-
-@dp.message_handler(lambda m: m.text == "Далее")
-async def route_next_step(message: types.Message):
-    user = user_data.get(message.from_user.id)
-    if not user or user["state"] != "route":
-        await message.answer("Пожалуйста, выберите маршрут.")
-        return
-
-    user["route_step"] += 1
-    route = user["route"]
-    step = user["route_step"]
-
-    if step < len(routes[route]):
-        await message.answer(routes[route][step], reply_markup=ReplyKeyboardMarkup(resize_keyboard=True).add(back_button, KeyboardButton("Далее")))
-    else:
-        if route == "Маршрут 1":
-            user["state"] = "test"
-            user["test_step"] = 0
-            user["test_correct"] = 0
-            q = test_questions[0]
-            await message.answer("Маршрут завершён! Пройдите тест:", reply_markup=ReplyKeyboardMarkup(resize_keyboard=True).add(back_button))
-            await message.answer(q["question"], reply_markup=test_keyboard(q["options"]))
+def route_handler(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    text = update.message.text
+    if text in routes:
+        user_data[user_id]["state"] = "route"
+        user_data[user_id]["route"] = text
+        user_data[user_id]["step"] = 0
+        keyboard = [["Далее", "Назад"]]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        update.message.reply_text(routes[text][0], reply_markup=reply_markup)
+    elif text == "Далее":
+        if user_data[user_id]["state"] == "route":
+            route = user_data[user_id]["route"]
+            user_data[user_id]["step"] += 1
+            step = user_data[user_id]["step"]
+            if step < len(routes[route]):
+                keyboard = [["Далее", "Назад"]]
+                reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+                update.message.reply_text(routes[route][step], reply_markup=reply_markup)
+            else:
+                if route == "Маршрут 1":
+                    user_data[user_id]["state"] = "test"
+                    user_data[user_id]["test_step"] = 0
+                    user_data[user_id]["test_correct"] = 0
+                    send_test_question(update, context)
+                else:
+                    user_data[user_id]["state"] = "photo"
+                    user_data[user_id]["photo_task"] = 0
+                    update.message.reply_text("Маршрут завершён! Теперь выполните фото-задания.")
+                    update.message.reply_text(photo_tasks[0])
         else:
-            user["state"] = "photo_tasks"
-            user["photo_task"] = 0
-            await message.answer("Маршрут завершён! Теперь выполните фото-задания.", reply_markup=ReplyKeyboardMarkup(resize_keyboard=True).add(back_button))
-            await message.answer(photo_tasks[0])
+            update.message.reply_text("Выберите маршрут.")
+    elif text == "Назад":
+        user_data[user_id]["state"] = "main"
+        user_data[user_id]["route"] = None
+        user_data[user_id]["step"] = 0
+        keyboard = [["Маршрут 1", "Маршрут 2", "Маршрут 3"]]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        update.message.reply_text("Вы вернулись в главное меню. Выберите маршрут:", reply_markup=reply_markup)
+    else:
+        update.message.reply_text("Пожалуйста, выберите опцию из меню.")
 
-@dp.callback_query_handler(lambda c: c.data and c.data.startswith("test_answer:"))
-async def process_test_answer(callback_query: types.CallbackQuery):
-    user = user_data.get(callback_query.from_user.id)
-    if not user or user["state"] != "test":
-        await callback_query.answer("Тест не активен.")
-        return
+def send_test_question(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    step = user_data[user_id]["test_step"]
+    q = test_questions[step]
+    keyboard = [[InlineKeyboardButton(opt, callback_data=opt)] for opt in q["options"]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    update.message.reply_text(q["question"], reply_markup=reply_markup)
 
-    answer = callback_query.data.split(":")[1]
-    step = user["test_step"]
+def test_answer_handler(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user_id = query.from_user.id
+    answer = query.data
+    step = user_data[user_id]["test_step"]
     correct = test_questions[step]["correct"]
-
     if answer == correct:
-        user["test_correct"] += 1
-        await callback_query.answer("Правильно!")
+        user_data[user_id]["test_correct"] += 1
+        query.answer("Правильно!")
     else:
-        await callback_query.answer("Неправильно!")
-
-    user["test_step"] += 1
-    if user["test_step"] < len(test_questions):
-        q = test_questions[user["test_step"]]
-        await bot.send_message(callback_query.from_user.id, q["question"], reply_markup=test_keyboard(q["options"]))
+        query.answer("Неправильно!")
+    user_data[user_id]["test_step"] += 1
+    if user_data[user_id]["test_step"] < len(test_questions):
+        send_test_question(update, context)
     else:
-        user["state"] = "photo_tasks"
-        user["photo_task"] = 0
-        if user["test_correct"] > 0:
-            user["points"] += 5
-            await bot.send_message(callback_query.from_user.id, f"Тест пройден! +5 папах. Всего папах: {user['points']}")
-            if user["points"] >= 10:
-                await bot.send_message(callback_query.from_user.id, "Поздравляем! Вы можете получить сертификат!")
+        user_data[user_id]["state"] = "photo"
+        user_data[user_id]["photo_task"] = 0
+        if user_data[user_id]["test_correct"] > 0:
+            user_data[user_id]["points"] += 5
+            context.bot.send_message(user_id, f"Тест пройден! +5 папах. Всего папах: {user_data[user_id]['points']}")
+            if user_data[user_id]["points"] >= 10:
+                context.bot.send_message(user_id, "Поздравляем! Вы можете получить сертификат!")
         else:
-            await bot.send_message(callback_query.from_user.id, "Тест завершён. Папах не начислено.")
+            context.bot.send_message(user_id, "Тест завершён. Папах не начислено.")
+        context.bot.send_message(user_id, "Теперь выполните фото-задания.")
+        context.bot.send_message(user_id, photo_tasks[0])
+    query.edit_message_reply_markup(reply_markup=None)
 
-        await bot.send_message(callback_query.from_user.id, "Теперь выполните фото-задания.")
-        await bot.send_message(callback_query.from_user.id, photo_tasks[0])
-
-@dp.message_handler(content_types=types.ContentTypes.PHOTO)
-async def photo_handler(message: types.Message):
-    user = user_data.get(message.from_user.id)
-    if not user or user["state"] != "photo_tasks":
-        await message.answer("Фото сейчас не требуется.")
+def photo_handler(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    if user_data.get(user_id, {}).get("state") != "photo":
+        update.message.reply_text("Фото сейчас не требуется.")
         return
-
-    task_num = user["photo_task"]
-    await bot.send_photo(ADMIN_ID, message.photo[-1].file_id, caption=f"Фото от {message.from_user.full_name} — задание: {photo_tasks[task_num]}")
-
-    user["photo_task"] += 1
-    if user["photo_task"] < len(photo_tasks):
-        await message.answer(f"Фото получено! Следующее задание:\n{photo_tasks[user['photo_task']]}")
+    task_num = user_data[user_id]["photo_task"]
+    photo_file_id = update.message.photo[-1].file_id
+    context.bot.send_photo(ADMIN_ID, photo_file_id, caption=f"Фото от {update.effective_user.full_name} — задание: {photo_tasks[task_num]}")
+    user_data[user_id]["photo_task"] += 1
+    if user_data[user_id]["photo_task"] < len(photo_tasks):
+        update.message.reply_text(f"Фото получено! Следующее задание:\n{photo_tasks[user_data[user_id]['photo_task']]}")
     else:
-        user["points"] += 5
-        await message.answer(f"Все фото сданы! +5 папах. Всего папах: {user['points']}")
-        if user["points"] >= 10:
-            await message.answer("Поздравляем! Вы можете получить сертификат!")
-        user["state"] = "main"
-        user["route"] = None
-        user["route_step"] = 0
-        user["photo_task"] = 0
-        await message.answer("Возвращаемся в главное меню.", reply_markup=main_menu)
+        user_data[user_id]["points"] += 5
+        update.message.reply_text(f"Все фото сданы! +5 папах. Всего папах: {user_data[user_id]['points']}")
+        if user_data[user_id]["points"] >= 10:
+            update.message.reply_text("Поздравляем! Вы можете получить сертификат!")
+        user_data[user_id]["state"] = "main"
+        user_data[user_id]["route"] = None
+        user_data[user_id]["step"] = 0
+        user_data[user_id]["photo_task"] = 0
+        keyboard = [["Маршрут 1", "Маршрут 2", "Маршрут 3"]]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        update.message.reply_text("Возвращаемся в главное меню.", reply_markup=reply_markup)
 
-@dp.message_handler()
-async def fallback_handler(message: types.Message):
-    await message.answer("Пожалуйста, выберите опцию из меню.", reply_markup=main_menu)
+def fallback(update: Update, context: CallbackContext):
+    update.message.reply_text("Пожалуйста, используйте кнопки меню.")
+
+def main():
+    updater = Updater(BOT_TOKEN, use_context=True)
+    dp = updater.dispatcher
+
+    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, route_handler))
+    dp.add_handler(CallbackQueryHandler(test_answer_handler))
+    dp.add_handler(MessageHandler(Filters.photo, photo_handler))
+    dp.add_handler(MessageHandler(Filters.command, fallback))
+
+    updater.start_polling()
+    print("Бот запущен")
+    updater.idle()
 
 if __name__ == "__main__":
-    print("Бот запущен...")
-    executor.start_polling(dp, skip_updates=True)
+    main()
